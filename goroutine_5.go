@@ -9,7 +9,7 @@ import (
 
 func main() {
 	start := time.Now().UnixNano()
-	urls := genUrls(100)
+	urls := genUrls(10)
 	maxWorkers := 5
 
 	worker_in := make(chan string)
@@ -69,17 +69,12 @@ func send(urls []string, in chan string) {
 }
 
 func load(in chan string, out chan time.Duration) {
-	for {
-		url, ok := <-in
-
-		if !ok {
-			return
-		}
-
+	for url := range in {
 		log.Printf("load: %v\n", url)
 		s := easy.RandomSecsSleep(3)
 		log.Printf("loaded: %v %v\n", url, s)
 
 		out <- s
 	}
+	log.Print("in closed\n")
 }
