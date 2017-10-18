@@ -8,21 +8,30 @@ import (
 )
 
 func main() {
-	urls := genUrls(30)
-	maxWorkers := 3
+	start := time.Now().UnixNano()
+	urls := genUrls(100)
+	maxWorkers := 5
 
-	in := make(chan string)
-	out := make(chan time.Duration)
+	worker_in := make(chan string)
+	worker_out := make(chan time.Duration)
+	task_result := make(chan time.Duration)
 
-	// worker へ url を送る措置
-	go send(urls, in)
+	// worker へ task を送る措置  (今回の場合 url を供給する)
+	go send(urls, worker_in)
+
+	// worker から結果を収集する (終了条件が必要なので全 task である urls を渡す)
+	go pick(urls, worker_out, task_result)
 
 	// worker 発行
 	for i := 0; i < maxWorkers; i++ {
-		go load(in, out)
+		go load(worker_in, worker_out)
 	}
 
-	log.Printf("finish: total: %v\n", sum(urls, out))
+	log.Printf(
+		"finish: worker_total: %v, total: %v \n",
+		<-task_result,
+		time.Duration(time.Now().UnixNano()-start),
+	)
 }
 
 func genUrls(n int) []string {
@@ -34,7 +43,7 @@ func genUrls(n int) []string {
 	return urls
 }
 
-func sum(urls []string, out chan time.Duration) time.Duration {
+func pick(urls []string, out chan time.Duration, re chan time.Duration) {
 	total := time.Duration(0)
 
 	for i := 0; i < len(urls); i++ {
@@ -48,7 +57,7 @@ func sum(urls []string, out chan time.Duration) time.Duration {
 		total += s
 	}
 
-	return total
+	re <- total
 }
 
 func send(urls []string, in chan string) {
