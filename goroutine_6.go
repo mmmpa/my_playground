@@ -6,6 +6,7 @@ import (
 	"time"
 	"fmt"
 	"context"
+	"sync"
 )
 
 type Result struct {
@@ -32,9 +33,7 @@ func main() {
 	go pick(ctx, urls, worker_out, task_result)
 
 	// worker 発行
-	for i := 0; i < maxWorkers; i++ {
-		go load(ctx, worker_in, worker_out)
-	}
+	go load(ctx, maxWorkers, worker_in, worker_out)
 
 	results := <-task_result
 
@@ -59,6 +58,7 @@ func genUrls(n int) []string {
 
 func pick(ctx context.Context, urls []string, out chan Result, re chan []Result) {
 	results := make([]Result, 0)
+	defer close(re)
 	defer func() { re <- results }()
 
 	for i := 0; i < len(urls); i++ {
@@ -91,26 +91,38 @@ func send(ctx context.Context, urls []string, in chan string) {
 	}
 }
 
-func load(ctx context.Context, in chan string, out chan Result) {
-	defer log.Print("in closed\n")
+func load(ctx context.Context, maxWorkers int, in chan string, out chan Result) {
+	defer close(out)
 
-	for url := range in {
-		log.Printf("load: %v\n", url)
-		s := easy.RandomSecsSleep(3)
+	wg := sync.WaitGroup{}
 
-	L:
-		for {
-			select {
-			case <-ctx.Done():
-				log.Printf("loaded: but canceled %v\n", url)
-				return
-			case out <- Result{
-				URL:      url,
-				Duration: s,
-			}:
-				log.Printf("loaded: %v %v\n", url, s)
-				break L
+	for i := 0; i < maxWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer log.Print("in closed\n")
+
+			for url := range in {
+				log.Printf("load: %v\n", url)
+				s := easy.RandomSecsSleep(3)
+
+			L:
+				for {
+					select {
+					case <-ctx.Done():
+						log.Printf("loaded: but canceled %v\n", url)
+						return
+					case out <- Result{
+						URL:      url,
+						Duration: s,
+					}:
+						log.Printf("loaded: %v %v\n", url, s)
+						break L
+					}
+				}
 			}
-		}
+		}()
 	}
+
+	wg.Wait()
 }
